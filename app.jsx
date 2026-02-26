@@ -41,7 +41,7 @@ function getSun(d, lat, lon) {
 
 // ─── Layout constants (updated measurements) ──────────────────────────
 const LAT = -35.28, LON = 149.13, SC = 75, PAD = 40, NOFF = 12;
-const MAX_SH = 25, BALC_H = 2.2;
+const MAX_SH = 25, BALC_H = 2.2, FIXED_HM_MAX = 600;
 
 // Courtyard: 6m wide, 2.7m deep, with 1m×1m NE notch
 const CY_POLY = [[0, 0], [5, 0], [5, 1], [6, 1], [6, 2.7], [0, 2.7]];
@@ -337,10 +337,10 @@ function SolarShadowSimulator() {
 
       <div style={{ maxWidth: 780, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 4 }}>
-          <h1 style={{ fontSize: 18, fontWeight: 700, color: "#f59e0b", letterSpacing: "-.5px" }}>☀ Solar Shadow Simulator</h1>
-          <span style={{ fontSize: 10, color: "#57534e", letterSpacing: "1px" }}>DOWNER · 35.28°S 149.13°E</span>
+          <h1 style={{ fontSize: 18, fontWeight: 700, color: "#4ade80", letterSpacing: "-.5px" }}>🌿 Canopy</h1>
+          <span style={{ fontSize: 10, color: "#57534e", letterSpacing: "1px" }}>SOLAR PLANNER · DOWNER, CANBERRA</span>
         </div>
-        <div style={{ height: 1, background: "linear-gradient(90deg,#f59e0b44,transparent)", marginBottom: 12 }} />
+        <div style={{ height: 1, background: "linear-gradient(90deg,#4ade8044,transparent)", marginBottom: 12 }} />
 
         <div style={{ display: "flex", gap: 0, borderBottom: "1px solid #2e2e36", marginBottom: 16 }}>
           <button className={`tb ${tab === "shadow" ? "a" : ""}`} onClick={() => setTab("shadow")}>Live Shadows</button>
@@ -418,7 +418,7 @@ function SolarShadowSimulator() {
               <polygon points={ps(CY_POLY)} fill="#1a1a1e" stroke="none" />
               {heatmap.map((c, i) => (
                 <rect key={`hm-${i}`} x={tx(c.x - .075)} y={ty(c.y - .075)} width={.15 * SC} height={.15 * SC}
-                  fill={hC(c.sm, hmS.mx)} clipPath={c.zone === "open" ? "url(#cyc)" : "url(#cvc)"} />
+                  fill={hC(c.sm, FIXED_HM_MAX)} clipPath={c.zone === "open" ? "url(#cyc)" : "url(#cvc)"} />
               ))}
               {heatmap.filter((_, i) => i % 31 === 0 && _.sm > 0).map((c, i) => (
                 <text key={`hl-${i}`} x={tx(c.x)} y={ty(c.y) + 3} textAnchor="middle"
@@ -430,10 +430,10 @@ function SolarShadowSimulator() {
               <g transform={`translate(${tx(0)},${ty(Y_MAX) + 14})`}>
                 <text x="0" y="0" fill="#57534e" fontSize="8" fontFamily="inherit" fontWeight="600" letterSpacing="1">SUN HOURS @ {heightCm}cm</text>
                 {[0, .15, .3, .45, .6, .75, .9, 1].map((t, i) => (
-                  <rect key={`lg-${i}`} x={i * 28} y={6} width={26} height={10} fill={hC(t * hmS.mx, hmS.mx)} rx="1" />
+                  <rect key={`lg-${i}`} x={i * 28} y={6} width={26} height={10} fill={hC(t * FIXED_HM_MAX, FIXED_HM_MAX)} rx="1" />
                 ))}
                 <text x="0" y={26} fill="#44403c" fontSize="7" fontFamily="inherit">0h</text>
-                <text x={7 * 28 + 14} y={26} fill="#44403c" fontSize="7" fontFamily="inherit" textAnchor="middle">{hmS.mxH.toFixed(1)}h</text>
+                <text x={7 * 28 + 14} y={26} fill="#44403c" fontSize="7" fontFamily="inherit" textAnchor="middle">10h</text>
               </g>
             </>)}
 
@@ -589,7 +589,7 @@ function SolarShadowSimulator() {
         )}
 
         <div style={{ marginTop: 12, fontSize: 9, color: "#3a3a42", textAlign: "center" }}>
-          NOAA solar position · N offset {NOFF}° · Courtyard 6×2.7m · Covered 2.6×1.5m · {heightCm > 0 ? `Height ${heightCm}cm · ` : ""}2.2m balcony · 7m building
+          🌿 Canopy · NOAA solar position · N offset {NOFF}° · Courtyard 6×2.7m · Covered 2.6×1.5m · {heightCm > 0 ? `Height ${heightCm}cm · ` : ""}2.2m balcony · 7m building
         </div>
       </div>
     </div>
