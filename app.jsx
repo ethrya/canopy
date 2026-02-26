@@ -41,7 +41,7 @@ function getSun(d, lat, lon) {
 
 // ─── Layout constants (updated measurements) ──────────────────────────
 const LAT = -35.28, LON = 149.13, SC = 75, PAD = 40, NOFF = 12;
-const MAX_SH = 25, BALC_H = 2.2, FIXED_HM_MAX = 600;
+const MAX_SH = 25, BALC_H = 2.2, FIXED_HM_MAX = 480;
 
 // Courtyard: 6m wide, 2.7m deep, with 1m×1m NE notch
 const CY_POLY = [[0, 0], [5, 0], [5, 1], [6, 1], [6, 2.7], [0, 2.7]];
@@ -289,6 +289,68 @@ function SolarShadowSimulator() {
     return { mx, mxH: mx / 60, aO: op.length ? op.reduce((a, c) => a + c.sm, 0) / op.length / 60 : 0, aC: cv.length ? cv.reduce((a, c) => a + c.sm, 0) / cv.length / 60 : 0 };
   }, [heatmap]);
 
+  const ZONE_DEFS = [
+    { id: "fullsun",    label: "Full Sun",    color: "#fbbf24", plants: "Tomato, capsicum, banksia, fruit trees" },
+    { id: "summersun",  label: "Summer Sun",  color: "#f59e0b", plants: "Warm-season veggies, basil, zucchini" },
+    { id: "partsun",    label: "Part Sun",    color: "#d97706", plants: "Lettuce, herbs, strawberries, silverbeet" },
+    { id: "wintersun",  label: "Winter Sun",  color: "#a78bfa", plants: "Cool-season greens, coriander, parsley" },
+    { id: "shade",      label: "Shade",       color: "#44403c", plants: "Very limited — ferns, moss" },
+  ];
+
+  const classifyZone = (sumH, winH) => {
+    if (sumH >= 6 && winH >= 4) return "fullsun";
+    if (sumH >= 6) return "summersun";
+    if (sumH >= 3) return "partsun";
+    if (winH >= 2) return "wintersun";
+    return "shade";
+  };
+
+  const sunZones = useMemo(() => {
+    if (tab !== "zones") return null;
+    const summer = computeHeatmap(11, 21, true, z);  // Dec 21 AEDT
+    const winter = computeHeatmap(7, 1, false, z);    // Aug 1 AEST
+    const cellArea = 0.15 * 0.15; // m² per grid cell
+    return summer.map((c, i) => ({
+      x: c.x, y: c.y, zone: c.zone,
+      sunZone: classifyZone(c.sm / 60, winter[i].sm / 60),
+      summerH: c.sm / 60, winterH: winter[i].sm / 60,
+    }));
+  }, [tab, z]);
+
+  const zoneStats = useMemo(() => {
+    if (!sunZones) return null;
+    const cellArea = 0.15 * 0.15;
+    const counts = {};
+    for (const d of ZONE_DEFS) counts[d.id] = 0;
+    for (const c of sunZones) counts[c.sunZone]++;
+    return ZONE_DEFS.map(d => ({ ...d, area: (counts[d.id] * cellArea).toFixed(1), count: counts[d.id] }));
+  }, [sunZones]);
+
+  const exportCSV = useCallback(() => {
+    const dates = [
+      { label: 'jun21', mo: 5, dy: 21, dst: false },
+      { label: 'sep21', mo: 8, dy: 21, dst: false },
+      { label: 'dec21', mo: 11, dy: 21, dst: true },
+      { label: 'mar21', mo: 2, dy: 21, dst: true },
+    ];
+    const heights = [0, 0.5, 1.0];
+    const results = {};
+    for (const d of dates) for (const h of heights) {
+      results[`${d.label}_${Math.round(h * 100)}cm`] = computeHeatmap(d.mo, d.dy, d.dst, h);
+    }
+    const cols = dates.flatMap(d => heights.map(h => `${d.label}_${Math.round(h * 100)}cm`));
+    const ref = results[cols[0]];
+    let csv = `x,y,zone,${cols.join(',')}\n`;
+    for (let i = 0; i < ref.length; i++) {
+      const { x, y, zone } = ref[i];
+      csv += `${x.toFixed(2)},${y.toFixed(2)},${zone},${cols.map(k => (results[k][i].sm / 60).toFixed(2)).join(',')}\n`;
+    }
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'canopy-sun-hours.csv'; a.click();
+    URL.revokeObjectURL(url);
+  }, []);
+
   useEffect(() => {
     if (!animating) { if (animRef.current) cancelAnimationFrame(animRef.current); return; }
     let t = 360;
@@ -345,6 +407,7 @@ function SolarShadowSimulator() {
         <div style={{ display: "flex", gap: 0, borderBottom: "1px solid #2e2e36", marginBottom: 16 }}>
           <button className={`tb ${tab === "shadow" ? "a" : ""}`} onClick={() => setTab("shadow")}>Live Shadows</button>
           <button className={`tb ${tab === "heatmap" ? "a" : ""}`} onClick={() => setTab("heatmap")}>Sun Hours Heatmap</button>
+          <button className={`tb ${tab === "zones" ? "a" : ""}`} onClick={() => setTab("zones")}>Planting Map</button>
         </div>
 
         {/* Height slider */}
@@ -381,10 +444,20 @@ function SolarShadowSimulator() {
             <div className="sc"><div className="sl">Avg Covered</div><div className="sv" style={{ color: hmS.aC > 0 ? "#a78bfa" : "#44403c" }}>{hmS.aC.toFixed(1)}h</div></div>
           </div>
         )}
+        {tab === "zones" && zoneStats && (
+          <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+            {zoneStats.filter(s => s.count > 0).map(s => (
+              <div className="sc" key={s.id}>
+                <div className="sl" style={{ color: s.color }}>{s.label}</div>
+                <div className="sv" style={{ color: s.color }}>{s.area}m²</div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* SVG */}
         <div style={{ background: "#16161a", border: "1px solid #2e2e36", borderRadius: 10, padding: 8, marginBottom: 16, overflowX: "auto" }}>
-          <svg viewBox={`0 0 ${svgW + 110} ${svgH + (tab === "heatmap" ? 40 : 10)}`} style={{ width: "100%", maxHeight: tab === "heatmap" ? 440 : 400, display: "block" }}>
+          <svg viewBox={`0 0 ${svgW + 110} ${svgH + (tab === "heatmap" || tab === "zones" ? 40 : 10)}`} style={{ width: "100%", maxHeight: tab === "heatmap" || tab === "zones" ? 440 : 400, display: "block" }}>
             <defs>
               <clipPath id="cyc"><polygon points={ps(CY_POLY)} /></clipPath>
               <clipPath id="cvc"><polygon points={ps(COV_POLY)} /></clipPath>
@@ -433,7 +506,27 @@ function SolarShadowSimulator() {
                   <rect key={`lg-${i}`} x={i * 28} y={6} width={26} height={10} fill={hC(t * FIXED_HM_MAX, FIXED_HM_MAX)} rx="1" />
                 ))}
                 <text x="0" y={26} fill="#44403c" fontSize="7" fontFamily="inherit">0h</text>
-                <text x={7 * 28 + 14} y={26} fill="#44403c" fontSize="7" fontFamily="inherit" textAnchor="middle">10h</text>
+                <text x={7 * 28 + 14} y={26} fill="#44403c" fontSize="7" fontFamily="inherit" textAnchor="middle">8h+</text>
+              </g>
+            </>)}
+
+            {tab === "zones" && sunZones && (<>
+              <polygon points={ps(COV_POLY)} fill="#1a1a1e" stroke="#2e2e36" strokeWidth="1" />
+              <polygon points={ps(CY_POLY)} fill="#1a1a1e" stroke="none" />
+              {sunZones.map((c, i) => (
+                <rect key={`sz-${i}`} x={tx(c.x - .075)} y={ty(c.y - .075)} width={.15 * SC} height={.15 * SC}
+                  fill={ZONE_DEFS.find(d => d.id === c.sunZone).color}
+                  clipPath={c.zone === "open" ? "url(#cyc)" : "url(#cvc)"} />
+              ))}
+              <text x={tx(1.3)} y={ty(3.5)} textAnchor="middle" fill="#78716c" fontSize="9" fontFamily="inherit" fontWeight="500">COVERED</text>
+              <g transform={`translate(${tx(0)},${ty(Y_MAX) + 14})`}>
+                <text x="0" y="0" fill="#57534e" fontSize="8" fontFamily="inherit" fontWeight="600" letterSpacing="1">PLANTING ZONES @ {heightCm}cm</text>
+                {ZONE_DEFS.map((d, i) => (
+                  <g key={`zl-${i}`}>
+                    <rect x={i * 90} y={6} width={12} height={10} fill={d.color} rx="1" />
+                    <text x={i * 90 + 16} y={15} fill="#78716c" fontSize="7" fontFamily="inherit">{d.label}</text>
+                  </g>
+                ))}
               </g>
             </>)}
 
@@ -519,6 +612,7 @@ function SolarShadowSimulator() {
             </div>
           )}
 
+          {tab !== "zones" && (<>
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <span style={{ fontSize: 10, color: "#78716c", letterSpacing: "1px", textTransform: "uppercase" }}>Date</span>
@@ -561,7 +655,23 @@ function SolarShadowSimulator() {
             </>}
             <button className="b" onClick={() => { setPreset(5, 21); setTimeMin(720); }}>Worst Day</button>
             <button className="b" onClick={() => { setPreset(11, 21); setTimeMin(720); }}>Best Day</button>
+            <button className="b" onClick={exportCSV}>📊 Export CSV</button>
           </div>
+          </>)}
+
+          {tab === "zones" && zoneStats && (
+            <div style={{ background: "#222228", border: "1px solid #2e2e36", borderRadius: 8, padding: "12px 14px" }}>
+              <div style={{ fontSize: 10, color: "#78716c", letterSpacing: "1px", textTransform: "uppercase", marginBottom: 8 }}>Plant Suggestions</div>
+              {zoneStats.filter(s => s.count > 0).map(s => (
+                <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: 2, background: s.color, flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, color: s.color, fontWeight: 600, minWidth: 90 }}>{s.label}</span>
+                  <span style={{ fontSize: 10, color: "#78716c" }}>{s.plants}</span>
+                </div>
+              ))}
+              <div style={{ fontSize: 9, color: "#44403c", marginTop: 8 }}>Based on Dec 21 (summer) + Aug 1 (winter) sun hours{heightCm > 0 ? ` at ${heightCm}cm` : ""}</div>
+            </div>
+          )}
         </div>
 
         {/* Bars */}
