@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Solar shadow simulator for a specific courtyard in Downer, Canberra. Single-page React app, no build tools, React loaded via CDN.
+Solar shadow simulator for two courtyards (front and back) at a property in Downer, Canberra. Single-page React app, no build tools, React loaded via CDN.
 
 ## Key Files
 
@@ -18,18 +18,25 @@ Solar shadow simulator for a specific courtyard in Downer, Canberra. Single-page
 
 ## Coordinate System
 
-- Origin (0,0) = NW corner of courtyard
+- Origin (0,0) = NW corner of the active courtyard
 - X increases eastward, Y increases southward
-- Plan north is rotated 12° CCW from true north (NOFF constant)
+- Plan north is rotated 12° CCW from true north (NOFF constant) — same for both courtyards, same building
 - All measurements in metres
+
+## Courtyard config
+
+Both courtyards live in the `COURTYARDS` object (keyed `front`/`back`), near the top of `app.jsx`. Each entry is fully self-contained: `cyPoly`/`covPoly`/`inPoly` (shape polygons), `covBox` (the covered-area raytrace box, with `open` set to whichever face — `"north"`/`"south"`/`"east"`/`"west"` — is unobstructed), `cyWalls`/`extWalls`/`visWalls` (wall lists), and `width`/`yMax` (overall bounding size, used for the SVG). The `courtyard` state picks the active entry (`cfg`), which is threaded through `compute()`, `computeHeatmap()`, `covCells`, and all the SVG geometry — there's no other per-courtyard state to keep in sync.
 
 ## Common Tasks
 
 ### Adjusting courtyard dimensions
-Update: CY_POLY, COV_POLY, IN_POLY, CY_WALLS, EXT_WALLS, VIS_WALLS, and the covered area bounds in isCovLit() and covCells useMemo.
+Edit the relevant courtyard's entry in `COURTYARDS` — update `cyPoly`, `covPoly`, `inPoly`, `covBox`, `cyWalls`, `extWalls`, `visWalls`, and `width`/`yMax` together so they stay consistent.
+
+### Adding a new courtyard
+Add a new key to `COURTYARDS` following the same shape as `front`/`back`, then add a toggle button for it next to the existing Front/Back Courtyard buttons.
 
 ### Changing wall heights
-Wall arrays use height as the last numeric element. Update in CY_WALLS, EXT_WALLS, and VIS_WALLS.
+Wall arrays use height as the last numeric element. Update in the courtyard's `cyWalls`, `extWalls`, and `visWalls`.
 
 ### Testing locally
 `npx serve .` then open localhost. The file:// protocol may have CORS issues with the external JSX file.
