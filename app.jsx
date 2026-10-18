@@ -43,57 +43,92 @@ function getSun(d, lat, lon) {
 const LAT = -35.28, LON = 149.13, SC = 75, PAD = 40, NOFF = 12;
 const MAX_SH = 25, BALC_H = 2.2, FIXED_HM_MAX = 480;
 
-// Courtyard: 6m wide, 2.7m deep, with 1m×1m NE notch
-const CY_POLY = [[0, 0], [5, 0], [5, 1], [6, 1], [6, 2.7], [0, 2.7]];
-const CY_AREA = 5 * 1 + 6 * 1.7; // = 5 + 10.2 = 15.2... let me recalc
-// Actually: full rect 6×2.7=16.2, minus 1×1 notch = 15.2? No...
-// L-shape: bottom rect 6×1.7 (y:1→2.7) = 10.2, plus top rect 5×1 (y:0→1) = 5. Total = 15.2
-// But wait, top is 5m wide (x:0→5), 1m tall. Bottom is 6m wide, 1.7m tall (y:1→2.7).
-// Total = 5×1 + 6×1.7 = 5 + 10.2 = 15.2m²
-
-// Covered area: 2.6m × 1.5m, south of courtyard at x:0→2.6, y:2.7→4.2
-const COV_POLY = [[0, 2.7], [2.6, 2.7], [2.6, 4.2], [0, 4.2]];
-const COV_AREA = 2.6 * 1.5; // 3.9m²
-
-// Indoor
-const IN_POLY = [[2.6, 2.7], [6, 2.7], [6, 4.2], [2.6, 4.2]];
-
-// Y extent
-const Y_MAX = 4.2;
-
-// Wall definitions: [x1, y1, x2, y2, height]
-const CY_WALLS = [
-  [0, 0, 5, 0, 1.8],       // North wall
-  [5, 0, 5, 1, 1.8],       // N step wall
-  [5, 1, 6, 1, 1.8],       // Gate
-  [6, 1, 6, 2.7, 1.8],     // East wall
-  [0, 0, 0, 2.7, 1.8],     // West wall upper
-  [0, 2.7, 6, 2.7, 7],     // Building south face
-  [6, 2.7, 6, 4.2, 7],     // Building SE
-];
-
-// External walls for covered-area raytrace
-const EXT_WALLS = [
-  { axis: 'y', pos: 0, min: 0, max: 5, h: 1.8 },
-  { axis: 'x', pos: 5, min: 0, max: 1, h: 1.8 },
-  { axis: 'y', pos: 1, min: 5, max: 6, h: 1.8 },
-  { axis: 'x', pos: 6, min: 1, max: 2.7, h: 1.8 },
-  { axis: 'x', pos: 0, min: 0, max: 2.7, h: 1.8 },
-];
-
-// Visual wall rendering: [x1, y1, x2, y2, height, color]
-const VIS_WALLS = [
-  [0, 0, 5, 0, 1.8, "#ef4444"],
-  [5, 0, 5, 1, 1.8, "#ef4444"],
-  [5, 1, 6, 1, 1.8, "#ef4444"],
-  [6, 1, 6, 2.7, 1.8, "#ef4444"],
-  [0, 0, 0, 2.7, 1.8, "#ef4444"],
-  [0, 2.7, 0, 4.2, 2.0, "#eab308"],
-  [0, 2.7, 6, 2.7, 7, "#3b82f6"],
-  [6, 2.7, 6, 4.2, 7, "#3b82f6"],
-  [0, 4.2, 6, 4.2, 7, "#3b82f6"],
-  [2.6, 2.7, 2.6, 4.2, 7, "#3b82f6"],
-];
+// ─── Courtyard configs ──────────────────────────────────────────────────
+// Each courtyard is fully self-contained: its open-air shape (cyPoly), its
+// covered/balcony shape (covPoly) with the raytrace box + open face
+// (covBox), the indoor room block (inPoly, visual only), the overall
+// bounding width/depth for the SVG (width/yMax), and its wall lists.
+const COURTYARDS = {
+  front: {
+    label: "Front Courtyard",
+    width: 6, yMax: 4.2,
+    // Courtyard: 6m wide, 2.7m deep, with 1m×1m NE notch
+    cyPoly: [[0, 0], [5, 0], [5, 1], [6, 1], [6, 2.7], [0, 2.7]],
+    // Covered area: 2.6m × 1.5m, south of courtyard at x:0→2.6, y:2.7→4.2
+    covPoly: [[0, 2.7], [2.6, 2.7], [2.6, 4.2], [0, 4.2]],
+    covBox: { x0: 0, x1: 2.6, y0: 2.7, y1: 4.2, open: "north" },
+    inPoly: [[2.6, 2.7], [6, 2.7], [6, 4.2], [2.6, 4.2]],
+    // Wall definitions: [x1, y1, x2, y2, height]
+    cyWalls: [
+      [0, 0, 5, 0, 1.8],       // North wall
+      [5, 0, 5, 1, 1.8],       // N step wall
+      [5, 1, 6, 1, 1.8],       // Gate
+      [6, 1, 6, 2.7, 1.8],     // East wall
+      [0, 0, 0, 2.7, 1.8],     // West wall upper
+      [0, 2.7, 6, 2.7, 7],     // Building south face
+      [6, 2.7, 6, 4.2, 7],     // Building SE
+    ],
+    // External walls for covered-area raytrace
+    extWalls: [
+      { axis: 'y', pos: 0, min: 0, max: 5, h: 1.8 },
+      { axis: 'x', pos: 5, min: 0, max: 1, h: 1.8 },
+      { axis: 'y', pos: 1, min: 5, max: 6, h: 1.8 },
+      { axis: 'x', pos: 6, min: 1, max: 2.7, h: 1.8 },
+      { axis: 'x', pos: 0, min: 0, max: 2.7, h: 1.8 },
+    ],
+    // Visual wall rendering: [x1, y1, x2, y2, height, color]
+    visWalls: [
+      [0, 0, 5, 0, 1.8, "#ef4444"],
+      [5, 0, 5, 1, 1.8, "#ef4444"],
+      [5, 1, 6, 1, 1.8, "#ef4444"],
+      [6, 1, 6, 2.7, 1.8, "#ef4444"],
+      [0, 0, 0, 2.7, 1.8, "#ef4444"],
+      [0, 2.7, 0, 4.2, 2.0, "#eab308"],
+      [0, 2.7, 6, 2.7, 7, "#3b82f6"],
+      [6, 2.7, 6, 4.2, 7, "#3b82f6"],
+      [0, 4.2, 6, 4.2, 7, "#3b82f6"],
+      [2.6, 2.7, 2.6, 4.2, 7, "#3b82f6"],
+    ],
+    footer: "Courtyard 6×2.7m · Covered 2.6×1.5m",
+  },
+  back: {
+    label: "Back Courtyard",
+    width: 4.6, yMax: 5.93,
+    // Open courtyard: 4.6m wide, 4.13m deep, south of the covered area, SE corner cut 1m×1m for the gate
+    cyPoly: [[0, 1.8], [4.6, 1.8], [4.6, 4.93], [3.6, 5.93], [0, 5.93]],
+    // Covered area (balcony above): 2.6m × 1.8m, against the building at x:0→2.6, y:0→1.8
+    covPoly: [[0, 0], [2.6, 0], [2.6, 1.8], [0, 1.8]],
+    covBox: { x0: 0, x1: 2.6, y0: 0, y1: 1.8, open: "south" },
+    inPoly: [[2.6, 0], [4.6, 0], [4.6, 1.8], [2.6, 1.8]],
+    gate: [4.6, 4.93, 3.6, 5.93, 1.8],
+    // Ground-level garden bed: 2m along the south fence, 1.3m deep, SW corner
+    beds: [[[0, 4.63], [2, 4.63], [2, 5.93], [0, 5.93]]],
+    cyWalls: [
+      [0, 1.8, 4.6, 1.8, 7],         // Building/covered-zone face
+      [0, 1.8, 0, 5.93, 1.8],        // West wall
+      [4.6, 1.8, 4.6, 4.93, 1.8],    // East wall
+      [4.6, 4.93, 3.6, 5.93, 1.8],   // Gate (SE corner)
+      [0, 5.93, 3.6, 5.93, 1.8],     // South (far) boundary wall
+    ],
+    // Axis-aligned only, so the gate corner is approximated as square; it is
+    // far from the covered area and only affects near-southern sun.
+    extWalls: [
+      { axis: 'x', pos: 0, min: 1.8, max: 5.93, h: 1.8 },
+      { axis: 'x', pos: 4.6, min: 1.8, max: 5.93, h: 1.8 },
+      { axis: 'y', pos: 5.93, min: 0, max: 4.6, h: 1.8 },
+    ],
+    visWalls: [
+      [0, 1.8, 4.6, 1.8, 7, "#3b82f6"],
+      [0, 1.8, 0, 5.93, 1.8, "#ef4444"],
+      [4.6, 1.8, 4.6, 4.93, 1.8, "#ef4444"],
+      [0, 5.93, 3.6, 5.93, 1.8, "#ef4444"],
+      [0, 0, 2.6, 0, 7, "#3b82f6"],
+      [0, 0, 0, 1.8, 7, "#3b82f6"],
+      [2.6, 0, 2.6, 1.8, 7, "#3b82f6"],
+    ],
+    footer: "Courtyard 4.6×4.13m · Covered 2.6×1.8m · Bed 2×1.3m",
+  },
+};
 
 const fmtT = m => { const h = Math.floor(m / 60), mn = m % 60, a = h >= 12 ? "pm" : "am"; return `${h === 0 ? 12 : h > 12 ? h - 12 : h}:${String(mn).padStart(2, "0")} ${a}`; };
 const MO = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -120,9 +155,9 @@ function ptIn(x, y, p) {
 }
 
 // ─── Covered area raytrace at height z ─────────────────────────────────
-// Box: x∈[0,2.6], y∈[2.7,4.2], z∈[0,BALC_H]
-// Opening: north face y=2.7, x∈[0,2.6], z∈[0,BALC_H]
-function isCovLit(px, py, z, planAzDeg, altDeg) {
+// Box: x∈[box.x0,box.x1], y∈[box.y0,box.y1], z∈[0,BALC_H]
+// Opening: the box.open face ("north"|"south"|"east"|"west"), z∈[0,BALC_H]
+function isCovLit(px, py, z, planAzDeg, altDeg, box, extWalls) {
   if (altDeg <= 0.5) return false;
   const ceilAbove = BALC_H - z;
   if (ceilAbove <= 0) return false;
@@ -134,25 +169,28 @@ function isCovLit(px, py, z, planAzDeg, altDeg) {
   // Ray: (px+t*sinA, py-t*cosA, z+t*tanAl)
   let minT = Infinity, minF = "";
 
-  // North face y=2.7
-  if (cosA > 1e-6) { const t = (py - 2.7) / cosA; if (t > 1e-6 && t < minT) { minT = t; minF = "north"; } }
-  // South face y=4.2
-  if (cosA < -1e-6) { const t = (py - 4.2) / cosA; if (t > 1e-6 && t < minT) { minT = t; minF = "south"; } }
-  // West x=0
-  if (sinA < -1e-6) { const t = -px / sinA; if (t > 1e-6 && t < minT) { minT = t; minF = "west"; } }
-  // East x=2.6
-  if (sinA > 1e-6) { const t = (2.6 - px) / sinA; if (t > 1e-6 && t < minT) { minT = t; minF = "east"; } }
+  // North face y=box.y0
+  if (cosA > 1e-6) { const t = (py - box.y0) / cosA; if (t > 1e-6 && t < minT) { minT = t; minF = "north"; } }
+  // South face y=box.y1
+  if (cosA < -1e-6) { const t = (py - box.y1) / cosA; if (t > 1e-6 && t < minT) { minT = t; minF = "south"; } }
+  // West x=box.x0
+  if (sinA < -1e-6) { const t = (box.x0 - px) / sinA; if (t > 1e-6 && t < minT) { minT = t; minF = "west"; } }
+  // East x=box.x1
+  if (sinA > 1e-6) { const t = (box.x1 - px) / sinA; if (t > 1e-6 && t < minT) { minT = t; minF = "east"; } }
   // Ceiling
   if (tanAl > 1e-6) { const t = ceilAbove / tanAl; if (t > 1e-6 && t < minT) { minT = t; minF = "ceiling"; } }
 
-  if (minF !== "north") return false;
+  if (minF !== box.open) return false;
 
   const exitX = px + minT * sinA;
+  const exitY = py - minT * cosA;
   const exitZ = z + minT * tanAl;
-  if (exitX < 0 || exitX > 2.6 || exitZ < 0 || exitZ > BALC_H) return false;
+  const onYFace = minF === "north" || minF === "south";
+  if (onYFace ? (exitX < box.x0 || exitX > box.x1) : (exitY < box.y0 || exitY > box.y1)) return false;
+  if (exitZ < 0 || exitZ > BALC_H) return false;
 
   // Check ray clears courtyard walls
-  for (const w of EXT_WALLS) {
+  for (const w of extWalls) {
     if (w.axis === 'y') {
       if (cosA > 1e-6) {
         const t = (py - w.pos) / cosA;
@@ -181,11 +219,11 @@ function isCovLit(px, py, z, planAzDeg, altDeg) {
 }
 
 // ─── Heatmap ───────────────────────────────────────────────────────────
-function computeHeatmap(mo, dy, dst, z) {
+function computeHeatmap(mo, dy, dst, z, cfg) {
   const utcOff = dst ? 11 : 10, G = 0.15, INT = 15;
   const cells = [];
-  for (let x = G / 2; x < 6.5; x += G) for (let y = G / 2; y < Y_MAX + 0.5; y += G) {
-    const inCy = ptIn(x, y, CY_POLY), inCov = ptIn(x, y, COV_POLY);
+  for (let x = G / 2; x < cfg.width + 0.5; x += G) for (let y = G / 2; y < cfg.yMax + 0.5; y += G) {
+    const inCy = ptIn(x, y, cfg.cyPoly), inCov = ptIn(x, y, cfg.covPoly);
     if (!inCy && !inCov) continue;
     cells.push({ x, y, zone: inCy ? "open" : "covered", sm: 0 });
   }
@@ -195,7 +233,7 @@ function computeHeatmap(mo, dy, dst, z) {
     if (sun.altitude <= 0.5) continue;
     const pAz = sun.azimuth - NOFF;
     const cySh = [];
-    for (const w of CY_WALLS) {
+    for (const w of cfg.cyWalls) {
       const s = wallShadow(w[0], w[1], w[2], w[3], w[4], sun.azimuth, sun.altitude, z);
       if (s) cySh.push(s);
     }
@@ -205,7 +243,7 @@ function computeHeatmap(mo, dy, dst, z) {
         for (const sp of cySh) { if (sp.length >= 3 && ptIn(c.x, c.y, sp)) { sh = true; break; } }
         if (!sh) c.sm += INT;
       } else {
-        if (isCovLit(c.x, c.y, z, pAz, sun.altitude)) c.sm += INT;
+        if (isCovLit(c.x, c.y, z, pAz, sun.altitude, cfg.covBox, cfg.extWalls)) c.sm += INT;
       }
     }
   }
@@ -222,16 +260,19 @@ function SolarShadowSimulator() {
   const [showWR, setShowWR] = useState(true);
   const [tab, setTab] = useState("shadow");
   const [heightCm, setHeightCm] = useState(0);
+  const [courtyard, setCourtyard] = useState("front");
   const animRef = useRef(null);
 
+  const cfg = COURTYARDS[courtyard];
   const setPreset = (m, d) => { setMonth(m); setDay(d); setIsDST(!(m >= 4 && m <= 9)); };
   const z = heightCm / 100;
 
   const covCells = useMemo(() => {
     const S = 0.1, r = [];
-    for (let x = S / 2; x < 2.6; x += S) for (let y = 2.7 + S / 2; y < 4.2; y += S) r.push([x, y]);
+    const { x0, x1, y0, y1 } = cfg.covBox;
+    for (let x = x0 + S / 2; x < x1; x += S) for (let y = y0 + S / 2; y < y1; y += S) r.push([x, y]);
     return r;
-  }, []);
+  }, [cfg]);
 
   const compute = useCallback((m, d, t, dst, zH) => {
     const utcOff = dst ? 11 : 10, lH = Math.floor(t / 60), lM = t % 60;
@@ -243,14 +284,14 @@ function SolarShadowSimulator() {
     }
 
     const cyShad = [];
-    for (const w of CY_WALLS) {
+    for (const w of cfg.cyWalls) {
       const s = wallShadow(w[0], w[1], w[2], w[3], w[4], sun.azimuth, sun.altitude, zH);
       if (s) cyShad.push(s);
     }
 
     let cyT = 0, cyS = 0;
-    for (let x = .025; x < 6.5; x += .05) for (let y = .025; y < 3.2; y += .05) {
-      if (!ptIn(x, y, CY_POLY)) continue;
+    for (let x = .025; x < cfg.width + 0.5; x += .05) for (let y = .025; y < cfg.yMax + 0.5; y += .05) {
+      if (!ptIn(x, y, cfg.cyPoly)) continue;
       cyT++;
       let sh = false;
       for (const sp of cyShad) { if (sp.length >= 3 && ptIn(x, y, sp)) { sh = true; break; } }
@@ -261,11 +302,11 @@ function SolarShadowSimulator() {
     let covT = 0, covS = 0;
     for (const [cx, cy] of covCells) {
       covT++;
-      if (isCovLit(cx, cy, zH, pAz, sun.altitude)) { covS++; covLit.push([cx, cy]); }
+      if (isCovLit(cx, cy, zH, pAz, sun.altitude, cfg.covBox, cfg.extWalls)) { covS++; covLit.push([cx, cy]); }
     }
 
     return { sun, pAz, cyShad, cyPct: cyT ? (cyS / cyT) * 100 : 0, covPct: covT ? (covS / covT) * 100 : 0, covLit };
-  }, [covCells]);
+  }, [covCells, cfg]);
 
   const { sun, pAz, cyShad, cyPct, covPct, covLit } = useMemo(
     () => compute(month, day, timeMin, isDST, z),
@@ -279,8 +320,8 @@ function SolarShadowSimulator() {
 
   const heatmap = useMemo(() => {
     if (tab !== "heatmap") return null;
-    return computeHeatmap(month, day, isDST, z);
-  }, [month, day, isDST, tab, z]);
+    return computeHeatmap(month, day, isDST, z, cfg);
+  }, [month, day, isDST, tab, z, cfg]);
 
   const hmS = useMemo(() => {
     if (!heatmap) return null;
@@ -307,15 +348,15 @@ function SolarShadowSimulator() {
 
   const sunZones = useMemo(() => {
     if (tab !== "zones") return null;
-    const summer = computeHeatmap(11, 21, true, z);  // Dec 21 AEDT
-    const winter = computeHeatmap(7, 1, false, z);    // Aug 1 AEST
+    const summer = computeHeatmap(11, 21, true, z, cfg);  // Dec 21 AEDT
+    const winter = computeHeatmap(7, 1, false, z, cfg);    // Aug 1 AEST
     const cellArea = 0.15 * 0.15; // m² per grid cell
     return summer.map((c, i) => ({
       x: c.x, y: c.y, zone: c.zone,
       sunZone: classifyZone(c.sm / 60, winter[i].sm / 60),
       summerH: c.sm / 60, winterH: winter[i].sm / 60,
     }));
-  }, [tab, z]);
+  }, [tab, z, cfg]);
 
   const zoneStats = useMemo(() => {
     if (!sunZones) return null;
@@ -336,7 +377,7 @@ function SolarShadowSimulator() {
     const heights = [0, 0.5, 1.0];
     const results = {};
     for (const d of dates) for (const h of heights) {
-      results[`${d.label}_${Math.round(h * 100)}cm`] = computeHeatmap(d.mo, d.dy, d.dst, h);
+      results[`${d.label}_${Math.round(h * 100)}cm`] = computeHeatmap(d.mo, d.dy, d.dst, h, cfg);
     }
     const cols = dates.flatMap(d => heights.map(h => `${d.label}_${Math.round(h * 100)}cm`));
     const ref = results[cols[0]];
@@ -349,7 +390,7 @@ function SolarShadowSimulator() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'canopy-sun-hours.csv'; a.click();
     URL.revokeObjectURL(url);
-  }, []);
+  }, [cfg]);
 
   useEffect(() => {
     if (!animating) { if (animRef.current) cancelAnimationFrame(animRef.current); return; }
@@ -359,13 +400,22 @@ function SolarShadowSimulator() {
     return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
   }, [animating]);
 
-  const svgW = 6 * SC + PAD * 2, svgH = Y_MAX * SC + PAD * 2;
+  const svgW = cfg.width * SC + PAD * 2, svgH = cfg.yMax * SC + PAD * 2;
   const tx = x => PAD + x * SC, ty = y => PAD + y * SC;
   const ps = pts => pts.map(p => `${tx(p[0])},${ty(p[1])}`).join(" ");
   const pAzR = pAz * Math.PI / 180;
-  const cCx = tx(6) + 48, cCy = ty(0) + 48, cR = 36, nR = -NOFF * Math.PI / 180;
+  const cCx = tx(cfg.width) + 48, cCy = ty(0) + 48, cR = 36, nR = -NOFF * Math.PI / 180;
   const cyCol = cyPct > 60 ? "#f59e0b" : cyPct > 30 ? "#d97706" : cyPct > 0 ? "#92400e" : "#44403c";
   const covPx = 0.1 * SC;
+  const bboxCenter = poly => {
+    const xs = poly.map(p => p[0]), ys = poly.map(p => p[1]);
+    return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+  };
+  const [inLx, inLy] = bboxCenter(cfg.inPoly);
+  const [covLx, covLy] = bboxCenter(cfg.covPoly);
+  const [cyLx, cyLy] = bboxCenter(cfg.cyPoly);
+  const xTicks = Array.from({ length: Math.ceil(cfg.width) + 1 }, (_, i) => i);
+  const yTicks = Array.from({ length: Math.floor(cfg.yMax) + 1 }, (_, i) => i);
 
   const hC = (mins, mx) => {
     if (mx <= 0) return "#1a1a1e"; const r = mins / mx;
@@ -403,6 +453,11 @@ function SolarShadowSimulator() {
           <span style={{ fontSize: 10, color: "#57534e", letterSpacing: "1px" }}>SOLAR PLANNER · DOWNER, CANBERRA</span>
         </div>
         <div style={{ height: 1, background: "linear-gradient(90deg,#4ade8044,transparent)", marginBottom: 12 }} />
+
+        <div className="tg" style={{ marginBottom: 12, width: "fit-content" }}>
+          <button className={`to ${courtyard === "front" ? "a" : ""}`} onClick={() => setCourtyard("front")}>Front Courtyard</button>
+          <button className={`to ${courtyard === "back" ? "a" : ""}`} onClick={() => setCourtyard("back")}>Back Courtyard</button>
+        </div>
 
         <div style={{ display: "flex", gap: 0, borderBottom: "1px solid #2e2e36", marginBottom: 16 }}>
           <button className={`tb ${tab === "shadow" ? "a" : ""}`} onClick={() => setTab("shadow")}>Live Shadows</button>
@@ -459,25 +514,25 @@ function SolarShadowSimulator() {
         <div style={{ background: "#16161a", border: "1px solid #2e2e36", borderRadius: 10, padding: 8, marginBottom: 16, overflowX: "auto" }}>
           <svg viewBox={`0 0 ${svgW + 110} ${svgH + (tab === "heatmap" || tab === "zones" ? 40 : 10)}`} style={{ width: "100%", maxHeight: tab === "heatmap" || tab === "zones" ? 440 : 400, display: "block" }}>
             <defs>
-              <clipPath id="cyc"><polygon points={ps(CY_POLY)} /></clipPath>
-              <clipPath id="cvc"><polygon points={ps(COV_POLY)} /></clipPath>
+              <clipPath id="cyc"><polygon points={ps(cfg.cyPoly)} /></clipPath>
+              <clipPath id="cvc"><polygon points={ps(cfg.covPoly)} /></clipPath>
               <pattern id="ih" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
                 <line x1="0" y1="0" x2="0" y2="8" stroke="#33333a" strokeWidth="1.5" />
               </pattern>
             </defs>
 
-            <polygon points={ps(IN_POLY)} fill="url(#ih)" stroke="#2e2e36" strokeWidth="1" />
-            <text x={tx(4.3)} y={ty(3.5)} textAnchor="middle" fill="#44403c" fontSize="10" fontFamily="inherit" fontWeight="500">INDOOR</text>
+            <polygon points={ps(cfg.inPoly)} fill="url(#ih)" stroke="#2e2e36" strokeWidth="1" />
+            <text x={tx(inLx)} y={ty(inLy)} textAnchor="middle" fill="#44403c" fontSize="10" fontFamily="inherit" fontWeight="500">INDOOR</text>
 
             {tab === "shadow" && (<>
-              <polygon points={ps(COV_POLY)} fill="#1a1a1e" stroke="#2e2e36" strokeWidth="1" />
+              <polygon points={ps(cfg.covPoly)} fill="#1a1a1e" stroke="#2e2e36" strokeWidth="1" />
               {covLit.map((c, i) => (
                 <rect key={`cv-${i}`} x={tx(c[0] - .05)} y={ty(c[1] - .05)} width={covPx} height={covPx}
                   fill="#c4b5fd55" stroke="none" clipPath="url(#cvc)" />
               ))}
-              <text x={tx(1.3)} y={ty(3.5)} textAnchor="middle" fill="#78716c" fontSize="9" fontFamily="inherit" fontWeight="500">COVERED</text>
+              <text x={tx(covLx)} y={ty(covLy)} textAnchor="middle" fill="#78716c" fontSize="9" fontFamily="inherit" fontWeight="500">COVERED</text>
 
-              <polygon points={ps(CY_POLY)} fill={sun.altitude > .5 ? "#f59e0b33" : "#1e1e22"} stroke="none" />
+              <polygon points={ps(cfg.cyPoly)} fill={sun.altitude > .5 ? "#f59e0b33" : "#1e1e22"} stroke="none" />
               {showWR && winterRef.map((sp, i) => (
                 <polygon key={`wr-${i}`} points={ps(sp)} fill="none" stroke="#ef444455" strokeWidth="1" strokeDasharray="4 3" clipPath="url(#cyc)" />
               ))}
@@ -487,8 +542,8 @@ function SolarShadowSimulator() {
             </>)}
 
             {tab === "heatmap" && heatmap && hmS && (<>
-              <polygon points={ps(COV_POLY)} fill="#1a1a1e" stroke="#2e2e36" strokeWidth="1" />
-              <polygon points={ps(CY_POLY)} fill="#1a1a1e" stroke="none" />
+              <polygon points={ps(cfg.covPoly)} fill="#1a1a1e" stroke="#2e2e36" strokeWidth="1" />
+              <polygon points={ps(cfg.cyPoly)} fill="#1a1a1e" stroke="none" />
               {heatmap.map((c, i) => (
                 <rect key={`hm-${i}`} x={tx(c.x - .075)} y={ty(c.y - .075)} width={.15 * SC} height={.15 * SC}
                   fill={hC(c.sm, FIXED_HM_MAX)} clipPath={c.zone === "open" ? "url(#cyc)" : "url(#cvc)"} />
@@ -499,8 +554,8 @@ function SolarShadowSimulator() {
                   {(c.sm / 60).toFixed(1)}
                 </text>
               ))}
-              <text x={tx(1.3)} y={ty(3.5)} textAnchor="middle" fill="#78716c" fontSize="9" fontFamily="inherit" fontWeight="500">COVERED</text>
-              <g transform={`translate(${tx(0)},${ty(Y_MAX) + 14})`}>
+              <text x={tx(covLx)} y={ty(covLy)} textAnchor="middle" fill="#78716c" fontSize="9" fontFamily="inherit" fontWeight="500">COVERED</text>
+              <g transform={`translate(${tx(0)},${ty(cfg.yMax) + 14})`}>
                 <text x="0" y="0" fill="#57534e" fontSize="8" fontFamily="inherit" fontWeight="600" letterSpacing="1">SUN HOURS @ {heightCm}cm</text>
                 {[0, .15, .3, .45, .6, .75, .9, 1].map((t, i) => (
                   <rect key={`lg-${i}`} x={i * 28} y={6} width={26} height={10} fill={hC(t * FIXED_HM_MAX, FIXED_HM_MAX)} rx="1" />
@@ -511,15 +566,15 @@ function SolarShadowSimulator() {
             </>)}
 
             {tab === "zones" && sunZones && (<>
-              <polygon points={ps(COV_POLY)} fill="#1a1a1e" stroke="#2e2e36" strokeWidth="1" />
-              <polygon points={ps(CY_POLY)} fill="#1a1a1e" stroke="none" />
+              <polygon points={ps(cfg.covPoly)} fill="#1a1a1e" stroke="#2e2e36" strokeWidth="1" />
+              <polygon points={ps(cfg.cyPoly)} fill="#1a1a1e" stroke="none" />
               {sunZones.map((c, i) => (
                 <rect key={`sz-${i}`} x={tx(c.x - .075)} y={ty(c.y - .075)} width={.15 * SC} height={.15 * SC}
                   fill={ZONE_DEFS.find(d => d.id === c.sunZone).color}
                   clipPath={c.zone === "open" ? "url(#cyc)" : "url(#cvc)"} />
               ))}
-              <text x={tx(1.3)} y={ty(3.5)} textAnchor="middle" fill="#78716c" fontSize="9" fontFamily="inherit" fontWeight="500">COVERED</text>
-              <g transform={`translate(${tx(0)},${ty(Y_MAX) + 14})`}>
+              <text x={tx(covLx)} y={ty(covLy)} textAnchor="middle" fill="#78716c" fontSize="9" fontFamily="inherit" fontWeight="500">COVERED</text>
+              <g transform={`translate(${tx(0)},${ty(cfg.yMax) + 14})`}>
                 <text x="0" y="0" fill="#57534e" fontSize="8" fontFamily="inherit" fontWeight="600" letterSpacing="1">PLANTING ZONES @ {heightCm}cm</text>
                 {ZONE_DEFS.map((d, i) => (
                   <g key={`zl-${i}`}>
@@ -530,26 +585,39 @@ function SolarShadowSimulator() {
               </g>
             </>)}
 
-            <polygon points={ps(CY_POLY)} fill="none" stroke="#57534e" strokeWidth="1.5" />
-            <polygon points={ps(COV_POLY)} fill="none" stroke="#44403c" strokeWidth="1" />
+            <polygon points={ps(cfg.cyPoly)} fill="none" stroke="#57534e" strokeWidth="1.5" />
+            <polygon points={ps(cfg.covPoly)} fill="none" stroke="#44403c" strokeWidth="1" />
 
-            {VIS_WALLS.map((w, i) => (
+            {cfg.visWalls.map((w, i) => (
               <line key={`w-${i}`} x1={tx(w[0])} y1={ty(w[1])} x2={tx(w[2])} y2={ty(w[3])}
                 stroke={w[5]} strokeWidth={w[4] >= 7 ? 5 : w[4] >= 2 ? 3.5 : 3} strokeLinecap="round" />
             ))}
+            {cfg.gate && (
+              <line x1={tx(cfg.gate[0])} y1={ty(cfg.gate[1])} x2={tx(cfg.gate[2])} y2={ty(cfg.gate[3])}
+                stroke="#d6d3d1" strokeWidth="3" strokeDasharray="5 3" />
+            )}
+            {(cfg.beds || []).map((b, i) => {
+              const [bx, by] = bboxCenter(b);
+              return (
+                <g key={`bed-${i}`}>
+                  <polygon points={ps(b)} fill="none" stroke="#4ade80" strokeWidth="1.5" strokeDasharray="4 2" />
+                  <text x={tx(bx)} y={ty(by) + 3} textAnchor="middle" fill="#4ade80" fontSize="8" fontFamily="inherit" fontWeight="600" letterSpacing="1">BED</text>
+                </g>
+              );
+            })}
 
             {/* Scale ticks */}
-            {[0, 1, 2, 3, 4, 5, 6].map(x => (
+            {xTicks.map(x => (
               <g key={`sx-${x}`}>
                 <line x1={tx(x)} y1={ty(0) - 6} x2={tx(x)} y2={ty(0) - 2} stroke="#44403c" strokeWidth=".8" />
-                {x < 6 && <text x={tx(x + .5)} y={ty(0) - 10} textAnchor="middle" fill="#44403c" fontSize="7" fontFamily="inherit">{x}–{x + 1}m</text>}
+                {x < cfg.width && <text x={tx(x + .5)} y={ty(0) - 10} textAnchor="middle" fill="#44403c" fontSize="7" fontFamily="inherit">{x}–{x + 1}m</text>}
               </g>
             ))}
-            {[0, 1, 2, 3, 4].map(y => (
+            {yTicks.map(y => (
               <line key={`sy-${y}`} x1={tx(0) - 6} y1={ty(y)} x2={tx(0) - 2} y2={ty(y)} stroke="#44403c" strokeWidth=".8" />
             ))}
 
-            <text x={tx(3)} y={ty(1.4)} textAnchor="middle" fill="#a8a29e" fontSize="10" fontFamily="inherit" fontWeight="500" letterSpacing="2">
+            <text x={tx(cyLx)} y={ty(cyLy)} textAnchor="middle" fill="#a8a29e" fontSize="10" fontFamily="inherit" fontWeight="500" letterSpacing="2">
               OPEN COURTYARD
             </text>
 
@@ -581,18 +649,22 @@ function SolarShadowSimulator() {
             </g>
 
             {/* Legend */}
-            <g transform={`translate(${tx(6) + 24},${ty(2)})`}>
+            <g transform={`translate(${tx(cfg.width) + 24},${ty(2)})`}>
               <text x="0" y="0" fill="#57534e" fontSize="7" fontFamily="inherit" fontWeight="600" letterSpacing="1">WALLS</text>
-              <line x1="0" y1="10" x2="14" y2="10" stroke="#ef4444" strokeWidth="3" strokeLinecap="round" />
-              <text x="18" y="13" fill="#78716c" fontSize="7" fontFamily="inherit">1.8m brick</text>
-              <line x1="0" y1="24" x2="14" y2="24" stroke="#eab308" strokeWidth="3" strokeLinecap="round" />
-              <text x="18" y="27" fill="#78716c" fontSize="7" fontFamily="inherit">2.0m brick</text>
-              <line x1="0" y1="38" x2="14" y2="38" stroke="#3b82f6" strokeWidth="4" strokeLinecap="round" />
-              <text x="18" y="41" fill="#78716c" fontSize="7" fontFamily="inherit">7m bldg</text>
-              {showWR && tab === "shadow" && <>
-                <line x1="0" y1="54" x2="14" y2="54" stroke="#ef444455" strokeWidth="1" strokeDasharray="4 3" />
-                <text x="18" y="57" fill="#78716c" fontSize="7" fontFamily="inherit">Jun 21</text>
-              </>}
+              {[
+                { label: "1.8m brick", stroke: "#ef4444", w: 3 },
+                courtyard === "front" && { label: "2.0m brick", stroke: "#eab308", w: 3 },
+                { label: "7m bldg", stroke: "#3b82f6", w: 4 },
+                cfg.gate && { label: "Gate", stroke: "#d6d3d1", w: 3, dash: "5 3" },
+                cfg.beds && { label: "Garden bed", stroke: "#4ade80", w: 1.5, dash: "4 2" },
+                showWR && tab === "shadow" && { label: "Jun 21", stroke: "#ef444455", w: 1, dash: "4 3" },
+              ].filter(Boolean).map((r, i) => (
+                <g key={r.label}>
+                  <line x1="0" y1={10 + i * 14} x2="14" y2={10 + i * 14} stroke={r.stroke} strokeWidth={r.w}
+                    strokeDasharray={r.dash} strokeLinecap={r.dash ? "butt" : "round"} />
+                  <text x="18" y={13 + i * 14} fill="#78716c" fontSize="7" fontFamily="inherit">{r.label}</text>
+                </g>
+              ))}
             </g>
           </svg>
         </div>
@@ -699,7 +771,7 @@ function SolarShadowSimulator() {
         )}
 
         <div style={{ marginTop: 12, fontSize: 9, color: "#3a3a42", textAlign: "center" }}>
-          🌿 Canopy · NOAA solar position · N offset {NOFF}° · Courtyard 6×2.7m · Covered 2.6×1.5m · {heightCm > 0 ? `Height ${heightCm}cm · ` : ""}2.2m balcony · 7m building
+          🌿 Canopy · NOAA solar position · N offset {NOFF}° · {cfg.footer} · {heightCm > 0 ? `Height ${heightCm}cm · ` : ""}2.2m balcony · 7m building
         </div>
       </div>
     </div>
