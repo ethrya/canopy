@@ -94,18 +94,24 @@ const COURTYARDS = {
   back: {
     label: "Back Courtyard",
     width: 4.6, yMax: 5.93,
-    // Open courtyard: 4.6m wide, 4.13m deep, south of the covered area
-    cyPoly: [[0, 1.8], [4.6, 1.8], [4.6, 5.93], [0, 5.93]],
+    // Open courtyard: 4.6m wide, 4.13m deep, south of the covered area, SE corner cut 1m×1m for the gate
+    cyPoly: [[0, 1.8], [4.6, 1.8], [4.6, 4.93], [3.6, 5.93], [0, 5.93]],
     // Covered area (balcony above): 2.6m × 1.8m, against the building at x:0→2.6, y:0→1.8
     covPoly: [[0, 0], [2.6, 0], [2.6, 1.8], [0, 1.8]],
     covBox: { x0: 0, x1: 2.6, y0: 0, y1: 1.8, open: "south" },
     inPoly: [[2.6, 0], [4.6, 0], [4.6, 1.8], [2.6, 1.8]],
+    gate: [4.6, 4.93, 3.6, 5.93, 1.8],
+    // Ground-level garden bed: 2m along the south fence, 1.3m deep, SW corner
+    beds: [[[0, 4.63], [2, 4.63], [2, 5.93], [0, 5.93]]],
     cyWalls: [
-      [0, 1.8, 4.6, 1.8, 7],       // Building/covered-zone face
-      [0, 1.8, 0, 5.93, 1.8],      // West wall
-      [4.6, 1.8, 4.6, 5.93, 1.8],  // East wall
-      [0, 5.93, 4.6, 5.93, 1.8],   // South (far) boundary wall
+      [0, 1.8, 4.6, 1.8, 7],         // Building/covered-zone face
+      [0, 1.8, 0, 5.93, 1.8],        // West wall
+      [4.6, 1.8, 4.6, 4.93, 1.8],    // East wall
+      [4.6, 4.93, 3.6, 5.93, 1.8],   // Gate (SE corner)
+      [0, 5.93, 3.6, 5.93, 1.8],     // South (far) boundary wall
     ],
+    // Axis-aligned only, so the gate corner is approximated as square; it is
+    // far from the covered area and only affects near-southern sun.
     extWalls: [
       { axis: 'x', pos: 0, min: 1.8, max: 5.93, h: 1.8 },
       { axis: 'x', pos: 4.6, min: 1.8, max: 5.93, h: 1.8 },
@@ -114,13 +120,13 @@ const COURTYARDS = {
     visWalls: [
       [0, 1.8, 4.6, 1.8, 7, "#3b82f6"],
       [0, 1.8, 0, 5.93, 1.8, "#ef4444"],
-      [4.6, 1.8, 4.6, 5.93, 1.8, "#ef4444"],
-      [0, 5.93, 4.6, 5.93, 1.8, "#ef4444"],
+      [4.6, 1.8, 4.6, 4.93, 1.8, "#ef4444"],
+      [0, 5.93, 3.6, 5.93, 1.8, "#ef4444"],
       [0, 0, 2.6, 0, 7, "#3b82f6"],
       [0, 0, 0, 1.8, 7, "#3b82f6"],
       [2.6, 0, 2.6, 1.8, 7, "#3b82f6"],
     ],
-    footer: "Courtyard 4.6×4.13m · Covered 2.6×1.8m",
+    footer: "Courtyard 4.6×4.13m · Covered 2.6×1.8m · Bed 2×1.3m",
   },
 };
 
@@ -586,6 +592,19 @@ function SolarShadowSimulator() {
               <line key={`w-${i}`} x1={tx(w[0])} y1={ty(w[1])} x2={tx(w[2])} y2={ty(w[3])}
                 stroke={w[5]} strokeWidth={w[4] >= 7 ? 5 : w[4] >= 2 ? 3.5 : 3} strokeLinecap="round" />
             ))}
+            {cfg.gate && (
+              <line x1={tx(cfg.gate[0])} y1={ty(cfg.gate[1])} x2={tx(cfg.gate[2])} y2={ty(cfg.gate[3])}
+                stroke="#d6d3d1" strokeWidth="3" strokeDasharray="5 3" />
+            )}
+            {(cfg.beds || []).map((b, i) => {
+              const [bx, by] = bboxCenter(b);
+              return (
+                <g key={`bed-${i}`}>
+                  <polygon points={ps(b)} fill="none" stroke="#4ade80" strokeWidth="1.5" strokeDasharray="4 2" />
+                  <text x={tx(bx)} y={ty(by) + 3} textAnchor="middle" fill="#4ade80" fontSize="8" fontFamily="inherit" fontWeight="600" letterSpacing="1">BED</text>
+                </g>
+              );
+            })}
 
             {/* Scale ticks */}
             {xTicks.map(x => (
@@ -632,18 +651,20 @@ function SolarShadowSimulator() {
             {/* Legend */}
             <g transform={`translate(${tx(cfg.width) + 24},${ty(2)})`}>
               <text x="0" y="0" fill="#57534e" fontSize="7" fontFamily="inherit" fontWeight="600" letterSpacing="1">WALLS</text>
-              <line x1="0" y1="10" x2="14" y2="10" stroke="#ef4444" strokeWidth="3" strokeLinecap="round" />
-              <text x="18" y="13" fill="#78716c" fontSize="7" fontFamily="inherit">1.8m brick</text>
-              {courtyard === "front" && <>
-                <line x1="0" y1="24" x2="14" y2="24" stroke="#eab308" strokeWidth="3" strokeLinecap="round" />
-                <text x="18" y="27" fill="#78716c" fontSize="7" fontFamily="inherit">2.0m brick</text>
-              </>}
-              <line x1="0" y1="38" x2="14" y2="38" stroke="#3b82f6" strokeWidth="4" strokeLinecap="round" />
-              <text x="18" y="41" fill="#78716c" fontSize="7" fontFamily="inherit">7m bldg</text>
-              {showWR && tab === "shadow" && <>
-                <line x1="0" y1="54" x2="14" y2="54" stroke="#ef444455" strokeWidth="1" strokeDasharray="4 3" />
-                <text x="18" y="57" fill="#78716c" fontSize="7" fontFamily="inherit">Jun 21</text>
-              </>}
+              {[
+                { label: "1.8m brick", stroke: "#ef4444", w: 3 },
+                courtyard === "front" && { label: "2.0m brick", stroke: "#eab308", w: 3 },
+                { label: "7m bldg", stroke: "#3b82f6", w: 4 },
+                cfg.gate && { label: "Gate", stroke: "#d6d3d1", w: 3, dash: "5 3" },
+                cfg.beds && { label: "Garden bed", stroke: "#4ade80", w: 1.5, dash: "4 2" },
+                showWR && tab === "shadow" && { label: "Jun 21", stroke: "#ef444455", w: 1, dash: "4 3" },
+              ].filter(Boolean).map((r, i) => (
+                <g key={r.label}>
+                  <line x1="0" y1={10 + i * 14} x2="14" y2={10 + i * 14} stroke={r.stroke} strokeWidth={r.w}
+                    strokeDasharray={r.dash} strokeLinecap={r.dash ? "butt" : "round"} />
+                  <text x="18" y={13 + i * 14} fill="#78716c" fontSize="7" fontFamily="inherit">{r.label}</text>
+                </g>
+              ))}
             </g>
           </svg>
         </div>
